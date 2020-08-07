@@ -1,0 +1,6 @@
+A Scala library for gossip based membership and failure detection
+
+Links:
+
+ - [[https://splitbrain.io/shoal/ Homepage]]
+ - [[https://github.com/hugofirth/shoal GitHub repository]]
