@@ -4,6 +4,8 @@
 
 A Scala library for gossip based membership and failure detection
 
+**NOTE**: The readme contents below are auto populated by a scala library generator. There is not yet documentation, a microsite, or a maven build.
+
 ## Usage
 
 The packages are published on Maven Central.
