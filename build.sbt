@@ -24,12 +24,12 @@ addCommandAlias("release",    ";+clean ;ci-release ;unidoc ;site/publishMicrosit
 /** Standard FP library for Scala:
   * [[https://typelevel.org/cats/]]
   */
-val CatsVersion = "2.1.1"
+val CatsVersion = "2.3.0"
 
 /** FP library for describing side-effects:
   * [[https://typelevel.org/cats-effect/]]
   */
-val CatsEffectVersion = "2.1.4"
+val CatsEffectVersion = "2.3.0"
 
 /** First-class support for type-classes:
   * [[https://github.com/typelevel/simulacrum]]
@@ -46,13 +46,18 @@ val MacroParadiseVersion = "2.1.1"
   *  - [[https://github.com/scalatest/scalatest]]
   *  - [[https://github.com/scalatest/scalatestplus-scalacheck/]]
   */
-val ScalaTestVersion = "3.2.0"
-val ScalaTestPlusVersion = "3.2.0.0"
+val ScalaTestVersion = "3.2.3"
+val ScalaTestPlusVersion = "3.2.3.0"
 
 /** Library for property-based testing:
   * [[https://www.scalacheck.org/]]
   */
-val ScalaCheckVersion = "1.14.3"
+val ScalaCheckVersion = "1.15.1"
+
+/** Library for doing property based checking of typeclass laws:
+  * [[https://github.com/typelevel/discipline-scalatest]]
+  */
+val DisciplineScalaTestVersion = "2.1.0"
 
 /** Compiler plugin for working with partially applied types:
   * [[https://github.com/typelevel/kind-projector]]
@@ -317,11 +322,12 @@ lazy val core = crossProject(JSPlatform, JVMPlatform)
       "org.typelevel"  %%% "cats-core"        % CatsVersion,
       "org.typelevel"  %%% "cats-effect"      % CatsEffectVersion,
       // For testing
-      "org.scalatest"     %%% "scalatest"        % ScalaTestVersion % Test,
-      "org.scalatestplus" %%% "scalacheck-1-14"  % ScalaTestPlusVersion % Test,
-      "org.scalacheck"    %%% "scalacheck"       % ScalaCheckVersion % Test,
-      "org.typelevel"     %%% "cats-laws"        % CatsVersion % Test,
-      "org.typelevel"     %%% "cats-effect-laws" % CatsEffectVersion % Test,
+      "org.scalatest"     %%% "scalatest"            % ScalaTestVersion % Test,
+      "org.scalatestplus" %%% "scalacheck-1-15"      % ScalaTestPlusVersion % Test,
+      "org.scalacheck"    %%% "scalacheck"           % ScalaCheckVersion % Test,
+      "org.typelevel"     %%% "cats-laws"            % CatsVersion % Test,
+      "org.typelevel"     %%% "cats-effect-laws"     % CatsEffectVersion % Test,
+      "org.typelevel"     %%% "discipline-scalatest" % DisciplineScalaTestVersion % Test,
     ),
   )
 

@@ -1,21 +1,49 @@
+/*
+ * Copyright (c) 2020 the Shoal contributors.
+ * See the project homepage at: https://splitbrain.io/shoal/
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package shoal
 
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
-import shoal.VectorClock.Node
+import cats.Eq
+import cats.Monoid
+import cats.Show
+import cats.implicits._
 import shoal.VectorClock.Timestamp
 
-import scala.collection.MapView
-import scala.collection.immutable.ArraySeq
-import scala.collection.mutable
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.immutable.HashMap
 
-final class VectorClock private (pClock: () => Timestamp,
-                                 private val nodes: Map[Node,Int],
-                                 private val timestamps: ArraySeq[Timestamp],
-                                 counter: AtomicLong) extends Equals {
+/**
+  * TODO:
+  *   - Add better Scaladoc
+  *   - Add methods for adding/removing timestamps to vector clock for given node
+  *   - Add syntax trait
+  *   - Implement typeclass instances for PartialOrder. Consider Functor/Foldable as per Haskell implementation
+  *   - Add binary encoding (with scodec?). Make sure to include magic bytes and a version number so that in future the format can change
+  *
+  *
+  * @param pClock
+  * @param timestamps
+  * @param counter
+  * @tparam Node
+  */
+final class VectorClock[Node] private (pClock: () => Timestamp,
+                                       val timestamps: HashMap[Node,Timestamp],
+                                       counter: AtomicLong) extends Equals {
   import VectorClock._
 
   /**
@@ -36,10 +64,8 @@ final class VectorClock private (pClock: () => Timestamp,
     nextTimestamp
   }
 
-  //TODO: Investigate the optimisations done by Akka around early bail out
-  //TODO: Figure out whether MapView implements correct equality semantics
-  def compareTo(that: VectorClock): Relationship = {
-    if (nodes.keySet == that.nodes.keySet && nodeTimestamps == that.nodeTimestamps)
+  def compareTo(that: VectorClock[Node]): Relationship = {
+    if (timestamps == that.timestamps)
       Equal
     else if (this isLessThan that)
       HappensBefore
@@ -49,72 +75,40 @@ final class VectorClock private (pClock: () => Timestamp,
       HappensConcurrent
   }
 
-  private def isLessThan(that: VectorClock): Boolean = {
-    val lNodeTimestamps = this.nodeTimestamps
-    val rNodeTimestamps = that.nodeTimestamps
-    val allLeftLTE = lNodeTimestamps.forall { case (id, ts) => ts <= rNodeTimestamps.getOrElse(id, timeZero) }
-    val oneRightGT = rNodeTimestamps.exists { case (id, ts) => ts > lNodeTimestamps.getOrElse(id, timeZero) }
+  private def isLessThan(that: VectorClock[Node]): Boolean = {
+    val allLeftLTE = timestamps.forall { case (id, ts) => ts <= that.timestamps.getOrElse(id, timeZero) }
+    val oneRightGT = that.timestamps.exists { case (id, ts) => ts > timestamps.getOrElse(id, timeZero) }
     allLeftLTE && oneRightGT
   }
 
-  private def nodeTimestamps: MapView[Node,Timestamp] = nodes.view.mapValues(v => timestamps.lift(v).getOrElse(timeZero))
-
-  def merge(that: VectorClock): VectorClock = {
+  def merge(that: VectorClock[Node]): VectorClock[Node] = {
     if ( this == that ) {
       this
-    } else if (nodes == that.nodes) {
-      // Clocks possess same nodes and timestamps are in the same order.
-      // We can do a simple max-merge of timestamp arrays
-      val mergedTs = (timestamps.view zip that.timestamps.view)
-        .map({ case (lTs, rTs) => lTs max rTs })
-        .to(ArraySeq)
-
-      VectorClock(pClock, nodes, mergedTs, counter)
-    } else if (nodes.keySet == that.nodes.keySet) {
-      // Clocks possess same nodes but timestamps are in a different order.
-      // For each node, get the index of the timestamp in both arrays.
-      // Look up the timestamps and keep the larger in a new timestamps array.
-      // Store the new timestamp at the index specified by this.nodes
-      val newTimestamps = new Array[Timestamp](timestamps.size)
-
-      for (node <- nodes.keySet;
-           thisIdx <- nodes.get(node);
-           thatIdx <- that.nodes.get(node);
-           thisTs <- timestamps.lift(thisIdx);
-           thatTs <- that.timestamps.lift(thatIdx)) {
-
-        newTimestamps.update(thisIdx, thisTs max thatTs)
-      }
-
-      VectorClock(pClock, nodes, ArraySeq.unsafeWrapArray(newTimestamps), counter)
     } else {
-      // new timestamps array
-      val diffNodes = nodes.keySet diff that.nodes.keySet
-      // TODO: create nodes map of that + diff
-      VectorClock(pClock, nodes, timestamps, counter)
+      val mergedTimestamps = timestamps.merged(that.timestamps) { case (lk -> lv, _ -> rv) => lk -> (lv max rv) }
+      VectorClock(pClock, mergedTimestamps, counter)
     }
   }
 
-  override def canEqual(that: Any): Boolean = that.isInstanceOf[VectorClock]
+  override def canEqual(that: Any): Boolean = that.isInstanceOf[VectorClock[_]]
 
   override def equals(other: Any): Boolean =
     (this eq other.asInstanceOf[AnyRef]) || (other match {
-      case that: VectorClock if that.canEqual(this) => (that compareTo this) == Equal
+      case that: VectorClock[Node] if that.canEqual(this) => (that compareTo this) == Equal
       case _ => false
     })
 
-  override def hashCode: Int = nodeTimestamps.hashCode
+  override def hashCode: Int = timestamps.hashCode
 }
 
-object VectorClock {
+object VectorClock extends VectorClockInstances {
 
   private val globalCounter = new AtomicLong(0)
 
-  def apply(pClock: () => Timestamp = System.currentTimeMillis,
-               nodes: Map[Node,Int] = Map.empty,
-               timestamps: ArraySeq[Timestamp] = ArraySeq.empty,
-               counter: AtomicLong = globalCounter): VectorClock =
-    new VectorClock(pClock, nodes, timestamps, counter)
+  def apply[Node](pClock: () => Timestamp = System.currentTimeMillis,
+            timestamps: HashMap[Node,Timestamp] = HashMap.empty[Node, Timestamp],
+            counter: AtomicLong = globalCounter): VectorClock[Node] =
+    new VectorClock(pClock, timestamps, counter)
 
   /**
     * Logical timestamp, represented as a simple long
@@ -123,17 +117,12 @@ object VectorClock {
   final val timeZero: Timestamp = 0L
 
   /**
-    * Node identifier. Likely eventually contains addresses etc... Initially a UUID
-    */
-  type Node = UUID
-
-  /**
     * Relationships between Vector clocks.
     * Not the same as a simple ordering, because there are 4 states rather than 3:
     *
-    * HAPPENS-BEFORE
-    * HAPPENS-AFTER
-    * EQUAL
+    * HAPPENS-BEFORE,
+    * HAPPENS-AFTER,
+    * EQUAL,
     * HAPPENS-CONCURRENT
     */
   sealed trait Relationship
@@ -141,4 +130,21 @@ object VectorClock {
   case object HappensAfter extends Relationship
   case object Equal extends Relationship
   case object HappensConcurrent extends Relationship
+}
+
+trait VectorClockInstances {
+
+  implicit def vClockEq[Node]: Eq[VectorClock[Node]] = Eq.fromUniversalEquals
+
+  implicit def vClockMonoid[Node]: Monoid[VectorClock[Node]] = new Monoid[VectorClock[Node]] {
+    override def empty: VectorClock[Node] = VectorClock()
+
+    override def combine(x: VectorClock[Node], y: VectorClock[Node]): VectorClock[Node] = x merge y
+  }
+
+  implicit def vClockShow[Node : Show]: Show[VectorClock[Node]] = Show.show { vClock =>
+    vClock.timestamps.iterator
+      .map({ case (k,v) => s"${k.show} -> $v" })
+      .mkString("VectorClock(", ", ", ")")
+  }
 }
