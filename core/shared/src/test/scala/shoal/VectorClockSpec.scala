@@ -19,9 +19,25 @@ package shoal
 
 import java.util.UUID
 
-import testInstances._
+import cats.kernel.laws.discipline.EqTests
+import arbitraries._
 import cats.kernel.laws.discipline.MonoidTests
+import org.scalacheck.Arbitrary.arbFunction1
 
 class VectorClockSpec extends ShoalSuite {
+
+  // Check typeclass laws
   checkAll("VectorClock.MonoidLaws", MonoidTests[VectorClock[UUID]].monoid)
+  checkAll("VectorClock.EqLaws", EqTests[VectorClock[UUID]].eqv)
+
+  // Test behaviours
+  test("put should add a node to a clock's entries") {
+    val timestamp = 1607820163L
+    val fakeClock = () => 1607820163L
+    val v = VectorClock[Int](pClock = fakeClock)
+    assert(v.timestamps.isEmpty)
+    val v2 = v.put(1)
+    assert(v2.timestamps.nonEmpty)
+    assert(v2.timestamps == Map(1->timestamp))
+  }
 }

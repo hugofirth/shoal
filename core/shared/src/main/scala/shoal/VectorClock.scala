@@ -34,6 +34,7 @@ import scala.collection.immutable.HashMap
   *   - Add syntax trait
   *   - Implement typeclass instances for PartialOrder. Consider Functor/Foldable as per Haskell implementation
   *   - Add binary encoding (with scodec?). Make sure to include magic bytes and a version number so that in future the format can change
+  *   - Extract timestamp behaviour to Clock type or typeclass
   *
   *
   * @param pClock
@@ -58,11 +59,13 @@ final class VectorClock[Node] private (pClock: () => Timestamp,
     do {
       val currentTimestamp = pClock()
       lastTimestamp = counter.get
-      nextTimestamp = if ( currentTimestamp > lastTimestamp ) currentTimestamp else lastTimestamp + 1;
-    } while(counter.compareAndSet(lastTimestamp, nextTimestamp))
+      nextTimestamp = if (currentTimestamp > lastTimestamp) currentTimestamp else lastTimestamp + 1;
+    } while(!counter.compareAndSet(lastTimestamp, nextTimestamp))
 
     nextTimestamp
   }
+
+  def put(node: Node): VectorClock[Node] = VectorClock(pClock, timestamps + (node -> timestamp), counter)
 
   def compareTo(that: VectorClock[Node]): Relationship = {
     if (timestamps == that.timestamps)

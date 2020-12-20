@@ -17,15 +17,19 @@
 
 package shoal
 
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 import org.scalacheck.Arbitrary
 import org.scalacheck.Arbitrary.arbitrary
+import org.scalacheck.Cogen
 import org.scalacheck.Gen
+import org.scalacheck.rng.Seed
+import shoal.VectorClock.Timestamp
 
 import scala.collection.immutable.HashMap
 
-object testInstances {
+object arbitraries {
 
   private val minTs = 100L
 
@@ -36,6 +40,17 @@ object testInstances {
     } yield node -> timestamp
   }
 
+  implicit val cogenUUID: Cogen[UUID] =
+    Cogen((seed: Seed, id: UUID) => Cogen.perturbPair(seed, (id.getLeastSignificantBits, id.getMostSignificantBits)))
+
+  implicit def cogenVClock[Node : Cogen : Ordering]: Cogen[VectorClock[Node]] = Cogen {
+    (seed: Seed, v: VectorClock[Node]) => {
+      val tsMap: Map[Node,Timestamp] = v.timestamps
+      Cogen.perturb(seed, tsMap)
+    }
+  }
+
   implicit def arbitraryVClock[Node : Arbitrary]: Arbitrary[VectorClock[Node]] =
     Arbitrary(genTimestamps[Node].map(ts => VectorClock(timestamps = HashMap.from(ts), counter = new AtomicLong(minTs))))
+
 }
